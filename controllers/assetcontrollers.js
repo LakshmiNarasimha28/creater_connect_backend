@@ -1,11 +1,11 @@
-import { getAssets as getAssetsService, createAsset as createAssetService, getAssetById as getAssetByIdService, updateAsset as updateAssetService, deleteAsset as deleteAssetService } from "../services/assetservices.js";
+import { createAssetService, getMyAssetsService, getPublicAssetsService, updateAssetService, deleteAssetService } from "../services/assetservices.js";
 
-export const getAssets = async (req, res) => {
+export const getPublicAssets = async (req, res) => {
     try {
-        const assets = await getAssetsService();
+        const assets = await getPublicAssetsService(req.query);
         res.json(assets);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };
 
@@ -14,33 +14,33 @@ export const createAsset = async (req, res) => {
         const savedAsset = await createAssetService(req.file, req.body, req.user._id);
         res.status(201).json(savedAsset);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };
 
-export const getAssetById = async (req, res) => {
+export const getMyAssets = async (req, res) => {
     try {
-        const asset = await getAssetByIdService(req.params.id);
-        res.json(asset);
+        const assets = await getMyAssetsService(req.user._id, req.query);
+        res.json(assets);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };
 
 export const updateAsset = async (req, res) => {
     try {
-        const updatedAsset = await updateAssetService(req.params.id, req.body);
+        const updatedAsset = await updateAssetService(req.params.id, req.body, req.user._id);
         res.json(updatedAsset);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };
 
 export const deleteAsset = async (req, res) => {
     try {
-        await deleteAssetService(req.params.id);
+        await deleteAssetService(req.params.id, req.user._id);
         res.json({ message: "Asset deleted successfully" });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };

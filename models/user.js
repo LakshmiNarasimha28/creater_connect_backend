@@ -3,16 +3,23 @@ import mongoose from "mongoose";
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    required: [true, "Name is required"],
+    trim: true,
+    minlength: [2, "Name must be at least 2 characters"],
+    maxlength: [50, "Name cannot exceed 50 characters"]
   },
   email: {
     type: String,
-    required: true,
+    required: [true, "Email is required"],
     unique: true,
+    lowercase: true,
+    trim: true,
+    index: true
   },
   password: {
     type: String,
-    required: true,
+    required: [true, "Password is required"],
+    minlength: [6, "Password must be at least 6 characters"]
   },
   role: {
     type: String,
@@ -22,7 +29,10 @@ const userSchema = new mongoose.Schema({
   tokens: {
     type: Number,
     default: 5,
+    min: 0
   }
+}, {
+  timestamps: true
 });
 
 const User = mongoose.model("User", userSchema);

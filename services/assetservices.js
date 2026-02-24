@@ -1,88 +1,199 @@
 import Assets from "../models/asset.js";
+import cloudinary from "../config/cloudinary.js";
 
-export const getAssets = async (req, res) => {
-  try {
-    const assets = await Assets.find().populate("creator", "username");
-    res.json(assets);
-    } catch (error) {
-    res.status(500).json({ message: "Server error" });
+export const getMyAssetsService = async (userId, query) => {
+    if (!userId) {
+        throw new Error("User ID is required");
     }
+
+    const page = Math.max(1, parseInt(query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(query.limit) || 10));
+    const skip = (page - 1) * limit;
+    const search = query.search || "";
+    
+    const filter = { 
+        creator: userId,
+        ...(search && { title: { $regex: search, $options: "i" } })
+    };
+    
+    const assets = await Assets.find(filter)
+        .populate("creator", "name email")
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 });
+    
+    const total = await Assets.countDocuments(filter);
+    const totalPages = Math.ceil(total / limit);
+    
+    return { assets, total, page, totalPages, hasMore: page < totalPages };
 };
 
-export const createAsset = async (file, body, userId) => {
+export const getPublicAssetsService = async (query) => {
+    const page = Math.max(1, parseInt(query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(query.limit) || 10));
+    const skip = (page - 1) * limit;
+    const search = query.search || "";
+    const type = query.type; // Filter by asset type (image, video, audio)
+    
+    const filter = { 
+        visibility: "public",
+        ...(search && { title: { $regex: search, $options: "i" } }),
+        ...(type && ["image", "video", "audio"].includes(type) && { type })
+    };
+    
+    const assets = await Assets.find(filter)
+        .populate("creator", "name email")
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 });
+    
+    const total = await Assets.countDocuments(filter);
+    const totalPages = Math.ceil(total / limit);
+    
+    return { assets, total, page, totalPages, hasMore: page < totalPages };
+};
+
+export const createAssetService = async (file, body, userId) => {
     if (!file) {
         throw new Error("No file uploaded");
     }
-    const uploadresult = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (error) => reject(error);
-        reader.readAsDataURL(file);
-    });
+
+    if (!userId) {
+        throw new Error("User authentication required");
+    }
+
     const { title, description, type, visibility } = body;
+
+    // Validate required fields
+    if (!title || !title.trim()) {
+        throw new Error("Title is required");
+    }
+
+    if (!type || !["image", "video", "audio"].includes(type)) {
+        throw new Error("Valid asset type is required (image, video, or audio)");
+    }
+
+    let uploadResult;
+    try {
+        // Upload to Cloudinary
+        uploadResult = await cloudinary.uploader.upload(file.path, {
+            folder: "creator_connect_assets",
+            resource_type: "auto",
+            timeout: 60000
+        });
+    } catch (error) {
+        throw new Error("Failed to upload file to cloud storage: " + error.message);
+    }
+
+    // Create asset document
     const newAsset = new Assets({
-        title,
-        description,
+        title: title.trim(),
+        description: description?.trim() || "",
         type,
-        url: uploadresult,
-        visibility,
+        url: uploadResult.secure_url,
+        visibility: visibility || "public",
         creator: userId
     });
+
     try {
         const savedAsset = await newAsset.save();
         return savedAsset;
     } catch (error) {
+        // Cleanup cloudinary upload if database save fails
+        try {
+            await cloudinary.uploader.destroy(uploadResult.public_id);
+        } catch (cleanupError) {
+            console.error("Failed to cleanup cloudinary upload:", cleanupError);
+        }
         throw new Error("Error saving asset: " + error.message);
     }
 };
 
-export const getAssetById = async (req, res) => {
-    try {
-        const asset = await Assets.findById(req.params.id).populate("creator", "username");
-        if (!asset) {
-            return res.status(404).json({ message: "Asset not found" });
-        }
-        res.json(asset);
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
+export const updateAssetService = async (assetId, updates, userId) => {
+    if (!assetId) {
+        throw new Error("Asset ID is required");
     }
+
+    if (!userId) {
+        throw new Error("User authentication required");
+    }
+
+    const asset = await Assets.findById(assetId);
+    if (!asset) {
+        throw new Error("Asset not found");
+    }
+
+    // Verify ownership
+    if (asset.creator.toString() !== userId.toString()) {
+        throw new Error("You are not authorized to update this asset");
+    }
+
+    const { title, description, type, visibility } = updates;
+
+    // Validate updates
+    if (title !== undefined) {
+        if (!title.trim()) {
+            throw new Error("Title cannot be empty");
+        }
+        asset.title = title.trim();
+    }
+
+    if (description !== undefined) {
+        asset.description = description.trim();
+    }
+
+    if (type !== undefined) {
+        if (!["image", "video", "audio"].includes(type)) {
+            throw new Error("Invalid asset type");
+        }
+        asset.type = type;
+    }
+
+    if (visibility !== undefined) {
+        if (!["public", "private"].includes(visibility)) {
+            throw new Error("Invalid visibility value");
+        }
+        asset.visibility = visibility;
+    }
+
+    const updatedAsset = await asset.save();
+    return updatedAsset;
 };
 
-export const updateAsset = async (req, res) => {
-    const { title, description, type, url, visibility } = req.body;
-    try {
-        const asset = await Assets.findById(req.params.id);
-        if (!asset) {
-            return res.status(404).json({ message: "Asset not found" });
-        }
-        if (asset.creator.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: "Unauthorized" });
-        }
-        asset.title = title || asset.title;
-        asset.description = description || asset.description;
-        asset.type = type || asset.type;
-        asset.url = url || asset.url;
-        asset.visibility = visibility || asset.visibility;
-        const updatedAsset = await asset.save();
-        res.json(updatedAsset);
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
-    }   
-};
-
-export const deleteAsset = async (req, res) => {
-    try {
-        const asset = await Assets.findById(req.params.id);
-        if (!asset) {
-            return res.status(404).json({ message: "Asset not found" });
-        }
-        if (asset.creator.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: "Unauthorized" });
-        }
-        await asset.remove();
-        res.json({ message: "Asset deleted" });
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
+export const deleteAssetService = async (assetId, userId) => {
+    if (!assetId) {
+        throw new Error("Asset ID is required");
     }
+
+    if (!userId) {
+        throw new Error("User authentication required");
+    }
+
+    const asset = await Assets.findById(assetId);
+    if (!asset) {
+        throw new Error("Asset not found");
+    }
+
+    // Verify ownership
+    if (asset.creator.toString() !== userId.toString()) {
+        throw new Error("You are not authorized to delete this asset");
+    }
+
+    // Extract public_id from cloudinary URL for deletion
+    try {
+        const urlParts = asset.url.split('/');
+        const publicIdWithExt = urlParts.slice(-2).join('/');
+        const publicId = publicIdWithExt.split('.')[0];
+        
+        // Delete from cloudinary
+        await cloudinary.uploader.destroy(publicId);
+    } catch (error) {
+        console.error("Failed to delete file from cloudinary:", error.message);
+        // Continue with database deletion even if cloudinary deletion fails
+    }
+
+    // Delete from database
+    await asset.deleteOne();
+    return true;
 };
 

@@ -1,11 +1,14 @@
-import { getAssets, createAsset, getAssetById, updateAsset, deleteAsset } from "../controllers/assetcontrollers.js";
+import { createAsset, getMyAssets, getPublicAssets, updateAsset, deleteAsset } from "../controllers/assetcontrollers.js";
+import protect from "../middleware/authmiddleware.js";
+import express from "express";
+import upload from "../middleware/uploadmiddleware.js";
 
-const assetRoutes = (app) => {
-    app.post("/api/assets", createAsset);
-    app.get("/api/assets", getAssets);
-    app.get("/api/assets/:id", getAssetById);
-    app.put("/api/assets/:id", updateAsset);
-    app.delete("/api/assets/:id", deleteAsset);
-};
+const assetrouter = express.Router();
 
-export default assetRoutes;
+assetrouter.post("/", protect, upload.single("file"), createAsset);
+assetrouter.put("/:id", protect, updateAsset);
+assetrouter.delete("/:id", protect, deleteAsset);
+assetrouter.get("/my", protect, getMyAssets); 
+assetrouter.get("/", getPublicAssets);
+
+export default assetrouter;
