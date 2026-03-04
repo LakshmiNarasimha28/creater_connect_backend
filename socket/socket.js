@@ -1,18 +1,30 @@
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import jwt from 'jsonwebtoken';
 import Message from '../models/message.js';
 import Conversation from '../models/chat.js';
-
+import { deductToken } from '../services/tokenservice.js';
+import { getOrCreateConversationService } from '../services/chatservice.js';
+import { pubclient, subclient } from '../config/redis.js';
 
 const connectedUsers = new Map();
+let ioInstance = null;
 
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:3000",
+      origin: process.env.CLIENT_URL || "http://localhost:5173",
       credentials: true
     }
   });
+
+  // Use Redis adapter if Redis is connected
+  if (pubclient && subclient) {
+    io.adapter(createAdapter(pubclient, subclient));
+    console.log('Socket.IO using Redis adapter for horizontal scaling');
+  } else {
+    console.log('Socket.IO running without Redis (single-instance mode)');
+  }
 
   
   io.use((socket, next) => {
@@ -48,16 +60,32 @@ export const initializeSocket = (server) => {
       try {
         const { conversationId, receiverId, content } = data;
 
+        if (!receiverId) {
+          return socket.emit('message-error', { message: 'Receiver is required' });
+        }
+
+        if (!content || !content.trim()) {
+          return socket.emit('message-error', { message: 'Message content is required' });
+        }
+
+        let activeConversationId = conversationId;
+        if (!activeConversationId) {
+          const conversation = await getOrCreateConversationService(socket.userId, receiverId);
+          activeConversationId = conversation._id;
+        }
+
+        await deductToken(socket.userId, 1);
+
         
         const message = await Message.create({
-          conversation: conversationId,
+          conversation: activeConversationId,
           sender: socket.userId,
           receiver: receiverId,
-          content
+          content: content.trim()
         });
 
         
-        await Conversation.findByIdAndUpdate(conversationId, {
+        await Conversation.findByIdAndUpdate(activeConversationId, {
           lastMessage: message._id,
           lastMessageTime: message.timestamp
         });
@@ -118,7 +146,15 @@ export const initializeSocket = (server) => {
     });
   });
 
+  ioInstance = io;
   return io;
+};
+
+export const getIo = () => {
+  if (!ioInstance) {
+    throw new Error('Socket.IO not initialized');
+  }
+  return ioInstance;
 };
 
 export const getConnectedUsers = () => {

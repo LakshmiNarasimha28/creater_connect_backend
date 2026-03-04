@@ -6,50 +6,52 @@ export const getMyAssetsService = async (userId, query) => {
         throw new Error("User ID is required");
     }
 
-    const page = Math.max(1, parseInt(query.page) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(query.limit) || 10));
+    const page = Math.max(1, parseInt(query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(query.limit, 10) || 10));
     const skip = (page - 1) * limit;
     const search = query.search || "";
-    
-    const filter = { 
+
+    const filter = {
         creator: userId,
         ...(search && { title: { $regex: search, $options: "i" } })
     };
-    
+
     const assets = await Assets.find(filter)
         .populate("creator", "name email")
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 });
-    
+        .sort({ createdAt: -1 })
+        .lean();
+
     const total = await Assets.countDocuments(filter);
     const totalPages = Math.ceil(total / limit);
-    
+
     return { assets, total, page, totalPages, hasMore: page < totalPages };
 };
 
 export const getPublicAssetsService = async (query) => {
-    const page = Math.max(1, parseInt(query.page) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(query.limit) || 10));
+    const page = Math.max(1, parseInt(query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(query.limit, 10) || 10));
     const skip = (page - 1) * limit;
     const search = query.search || "";
     const type = query.type; // Filter by asset type (image, video, audio)
-    
-    const filter = { 
+
+    const filter = {
         visibility: "public",
         ...(search && { title: { $regex: search, $options: "i" } }),
         ...(type && ["image", "video", "audio"].includes(type) && { type })
     };
-    
+
     const assets = await Assets.find(filter)
         .populate("creator", "name email")
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 });
-    
+        .sort({ createdAt: -1 })
+        .lean();
+
     const total = await Assets.countDocuments(filter);
     const totalPages = Math.ceil(total / limit);
-    
+
     return { assets, total, page, totalPages, hasMore: page < totalPages };
 };
 
@@ -71,6 +73,10 @@ export const createAssetService = async (file, body, userId) => {
 
     if (!type || !["image", "video", "audio"].includes(type)) {
         throw new Error("Valid asset type is required (image, video, or audio)");
+    }
+
+    if (visibility && !["public", "private"].includes(visibility)) {
+        throw new Error("Invalid visibility value");
     }
 
     let uploadResult;
@@ -184,7 +190,7 @@ export const deleteAssetService = async (assetId, userId) => {
         const urlParts = asset.url.split('/');
         const publicIdWithExt = urlParts.slice(-2).join('/');
         const publicId = publicIdWithExt.split('.')[0];
-        
+
         // Delete from cloudinary
         await cloudinary.uploader.destroy(publicId);
     } catch (error) {

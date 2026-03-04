@@ -4,7 +4,8 @@ import {
   getConversations,
   getOrCreateConversation,
   getMessages,
-  sendMessage
+  sendMessage,
+  deleteMessage
 } from '../controllers/chatcontoller.js';
 import protect from '../middleware/authmiddleware.js';
 
@@ -27,5 +28,8 @@ router.get('/messages/:conversationId', getMessages);
 
 // Send message (HTTP fallback)
 router.post('/send', sendMessage);
+
+// Delete message
+router.delete('/message/:messageId', deleteMessage);
 
 export default router;

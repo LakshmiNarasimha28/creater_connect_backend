@@ -29,19 +29,19 @@ export const registerUserService = async ({ name, email, password }) => {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email: sanitizedEmail });
+    const existingUser = await User.findOne({ email: sanitizedEmail }).lean();
     if (existingUser) {
         throw new Error("User already exists with this email");
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     // Create new user
-    const newUser = new User({ 
-        name: sanitizedName, 
-        email: sanitizedEmail, 
-        password: hashedPassword 
+    const newUser = new User({
+        name: sanitizedName,
+        email: sanitizedEmail,
+        password: hashedPassword
     });
     await newUser.save();
 
@@ -64,7 +64,7 @@ export const loginUserService = async ({ email, password }) => {
     }
 
     // Find user
-    const user = await User.findOne({ email: sanitizedEmail });
+    const user = await User.findOne({ email: sanitizedEmail }).lean();
     if (!user) {
         throw new Error("Invalid email or password");
     }

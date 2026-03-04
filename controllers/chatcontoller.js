@@ -6,13 +6,13 @@ import User from '../models/user.js';
 export const getUsers = async (req, res) => {
   try {
     const currentUserId = req.user._id;
-    
-    const users = await User.find({ 
-      _id: { $ne: currentUserId } 
+
+    const users = await User.find({
+      _id: { $ne: currentUserId }
     })
       .select('name email role')
       .sort({ name: 1 });
-    
+
     res.status(200).json({ success: true, users });
   } catch (error) {
     console.error('Error getting users:', error);
@@ -36,7 +36,7 @@ export const getOrCreateConversation = async (req, res) => {
       conversation = await Conversation.create({
         participants: [currentUserId, userId]
       });
-      
+
       conversation = await Conversation.findById(conversation._id)
         .populate('participants', 'name email role');
     }
@@ -129,5 +129,31 @@ export const sendMessage = async (req, res) => {
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+};
+
+// Delete message
+export const deleteMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const currentUserId = req.user._id;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    // Only allow sender to delete their own message
+    if (message.sender.toString() !== currentUserId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this message' });
+    }
+
+    await Message.findByIdAndDelete(messageId);
+
+    res.status(200).json({ success: true, message: 'Message deleted successfully', messageId });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete message' });
   }
 };

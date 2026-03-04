@@ -28,6 +28,9 @@ const MessageSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Add index for fast retrieval of messages in a conversation
+MessageSchema.index({ conversation: 1, timestamp: 1 });
+
 const Message = mongoose.models.Message || mongoose.model('Message', MessageSchema);
 
 export default Message;
